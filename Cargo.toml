@@ -1,0 +1,10 @@
+[package]
+name = "titrax"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+gtk4 = "0.7"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }

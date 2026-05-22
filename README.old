@@ -1,0 +1,160 @@
+NAME: TimeTracker
+AUTHOR: Harald Tveit Alvestrand, UNINETT <harald.t.alvestrand@uninett.no>
+COPYRIGHT: Yes
+
+TimeTracker is an Athena Widget-based program to keep track of time.
+It puts up a list of projects, and the number of minutes worked on each.
+You click on the project you want to work on, and it starts counting on that.
+At the end of the day, it saves the collected data in a file, and you can
+use a script to process the data. "sumtitra" is one possible such script.
+
+There are a couple of man pages floating around.
+
+Whatever you do about it, please tell me.
+
+NOTE: This program used to be called Timex. Timex is a registered trade mark
+of the Timex corporation; they did not like to have something that had their
+name on it, but was neither owned nor controlled by them.
+
+An updated version of this page is on the World Wide Web
+at http://domen.uninett.no/~hta/titra/TimeTracker.html
+
+INSTALLATION
+
+If you are lucky:
+
+1) Unshar/untar the software. It untars into the current directory.
+
+2) Inspect the imakefile. You may want to change NONXBINDIR and PERLLIBDIR.
+
+3) % xmkmf
+   This creates a makefile configured for *your* system.
+   I'm almost certain the included one will bite you.
+
+4) % make
+
+5) % make test
+   This takes TimeTracker for a "test ride", using the directory "test.TimeTracker"
+   in the current directory.
+
+6) (as root) # make install
+
+7) % titrax
+
+If you are unlucky, mumble.
+If you find out why you are unlucky, send me an E-mail about it.
+
+Tested on a lot of platforms, thanks to the beta test corps (you know
+who you are, THANKS!):
+
+- Sun3/SunOS
+- Sun4/SunOS
+- SCO Unix
+- VAX/VMS
+- DECstation/UNIX
+- SGI Indigo
+- Apollo DN3000 and DN4000
+- HP 400 series
+- HP 700 series
+- IBM RISC System6000/AIX
+- ESV Workstation
+- Linux
+
+If you have a platform not on this list, you are welcome to join the
+beta tester corps! Write titrax-beta-request@uninett.no to get on the list.
+
+NOTE:
+
+As distributed, TimeTracker will send an UDP packet to my workstation every
+time it is started, containing your (numeric) UID, your operating
+system and the TimeTracker version.
+
+This is JUST because I would like to get an idea of how many people
+use TimeTracker, and keep on using it (rather than "tried it once" folks).
+It will NEVER become a licensing scheme or some crazy thing like that.
+But, if your netadmins hate unknown UDP packets zooming off to unknown
+hosts, simply uncomment the following line to the IMAKEFILE:
+
+   CDEBUGFLAGS = -DDO_NOT_TELL_ABOUT_ME
+
+This will not only stop the call, but will drop the whole content of
+udping.c, which will also block any errors caused by differences in
+the socket implementation.
+
+
+COPYING, PAYMENT AND SUCH DETAILS
+
+I wrote this program because I needed it. After I released the first
+version, I got the feeling that other people may need it too.
+
+You may copy it and modify it in any way you like, the only thing that
+can make me mad is if you sell it for real money and do not give me some.
+
+As usual, there is no guarantee about anything at all, and you are not able
+to claim that I have done any damage to you by providing you with this
+program; any use you make of it is entirely at your own risk.
+
+If you like it, you are free to send me the price of a large pizza
+(my favourite costs around NOK 120 / USD 20 around Trondheim).
+Or not, if you don't feel like it.
+(See the file CONTRIBUTIONS for details)
+
+MAILING LISTS
+
+A lot of people have found bugs in TimeTracker. A lot of people are interested
+in further versions, suggestions for new ways to use it and so on.
+A few are even willing to do some work to help me test it.
+
+So, I have two mailing lists set up:
+
+   titrax@uninett.no: For general interest
+                     Mail titrax-request@uninett.no to join.
+                    
+   titrax-beta@uninett.no: For testing new versions before I inflict them
+                     upon the unwary public.
+                     Mail titrax-beta-request@uninett.no to join.
+
+CONTRIBUTORS
+
+Bob Gibson <rjg@sco.com> contributed signal handling.
+Taed Nelson <nelson@berlioz.nsc.com> contributed the pause button.
+Bruce Steinke <bsteinke@dsd.es.com> contributed the project editor,
+      easiest the biggest patch I got!
+      He would not recognize the current version, but thanks anyway!
+George Carrette <gjc@mitec5.mitech.com> contributed the VMS stuff.
+      It is supposed to work on VMS now.
+Michael J. Shon <mjs@tropel.gca.com> contributed the TimeTrackerDIR variable.
+Mark Rawling <Mark.Rawling@mel.dit.csiro.au> contributed the code
+      for displaying the project and used time in the icon name.
+Bill Randle <billr@saab.cna.tek.com> made the first icon for TimeTracker,
+      and gave me code to produce an icon. Sorry it took so long!
+      He also contributed the -minutes and -monthday options to sumtitra.
+Grant Totten <ccgwt@blaze.trentu.ca> supplied the current TimeTracker icon.
+Mike Gleichner <mkg@stealth.plk.af.mil> made it run on a NEXT
+Shane Youl <Shane.Youl@mel.dit.csiro.au> supplied the first multilingual
+      version of sumtitra, and most of the non-English, non-Norwegian
+      strings.
+Gilles Goullet <Gilles.GOULLET@iacorp.fr> supplied some more French
+      for the multilingual ability
+Per Hallenborg <hbg@vattenfall.se> contributed Swedish text for Sumtitra.
+Tim Rosmus <tim@mdd.comm.mot.com> contributed the AutoPause function (it
+	only took me 1 1/2 years to get it in there - sorry!)
+Jonathan I. Kamens <jik@cam.ov.com> contributed "titrat" and the "startday"
+	and "numdays" options to sumtitra, and various other optins
+Too many people to list them all pointed out elementary errors in my code
+and gave hints for increasing portability.
+
+
+AUTHOR'S ADDRESS
+
+E-mail (for bug reports and so on):
+
+  Harald Tveit Alvestrand <Harald.T.Alvestrand@uninett.no>
+
+Physical (for pizzas)
+
+  Harald Tveit Alvestrand
+  Weidemanns vei 27
+  7043 TRONDHEIM
+  NORWAY
+
