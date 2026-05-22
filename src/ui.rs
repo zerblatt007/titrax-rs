@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 use gtk4::{
-    glib, Adjustment, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Label,
-    ListBox, ListBoxRow, Orientation, PolicyType, ScrolledWindow, SelectionMode, SpinButton,
+    glib, Adjustment, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Label, ListBox,
+    ListBoxRow, Orientation, PolicyType, ScrolledWindow, SelectionMode, SpinButton,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -45,11 +45,6 @@ pub fn build_window(app: &Application) {
     vbox.set_margin_start(8);
     vbox.set_margin_end(8);
 
-    // Header label
-    let header = Label::new(Some("TimeTracker"));
-    header.set_markup("<b>TimeTracker</b>");
-    vbox.append(&header);
-
     // Scrolled project list
     let scrolled = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::Never)
@@ -62,25 +57,72 @@ pub fn build_window(app: &Application) {
     scrolled.set_child(Some(&list_box));
     vbox.append(&scrolled);
 
+    // Track the highlighted (selected) row independently of active_index.
+    let selected_index: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
+
     // Button bar
     let btn_box = GtkBox::new(Orientation::Horizontal, 4);
     let btn_add = Button::with_label("Add");
     let btn_sort = Button::with_label("Sort A-Å");
     let btn_pause = Button::with_label("Pause");
+    let btn_edit_time = Button::with_label("Edit Time");
+    let btn_delete = Button::with_label("Delete");
+    let btn_mark = Button::with_label("Mark");
+    let btn_move5 = Button::with_label("Move 5 min");
     btn_box.append(&btn_add);
     btn_box.append(&btn_sort);
     btn_box.append(&btn_pause);
+    btn_box.append(&btn_edit_time);
+    btn_box.append(&btn_delete);
+    btn_box.append(&btn_mark);
+    btn_box.append(&btn_move5);
     vbox.append(&btn_box);
 
     window.set_child(Some(&vbox));
 
+    // Initial button sensitivity
+    refresh_button_sensitivity(
+        &btn_edit_time,
+        &btn_delete,
+        &btn_mark,
+        &btn_move5,
+        &state,
+        &selected_index,
+    );
+
     // Populate list with today's projects
     populate_list(&list_box, &state);
+
+    // --- Signal: row selected (highlights a row without activating it) ---
+    {
+        let selected_index = selected_index.clone();
+        let state = state.clone();
+        let btn_edit_time = btn_edit_time.clone();
+        let btn_delete = btn_delete.clone();
+        let btn_mark = btn_mark.clone();
+        let btn_move5 = btn_move5.clone();
+        list_box.connect_row_selected(move |_, row_opt| {
+            *selected_index.borrow_mut() = row_opt.map(|r| r.index() as usize);
+            refresh_button_sensitivity(
+                &btn_edit_time,
+                &btn_delete,
+                &btn_mark,
+                &btn_move5,
+                &state,
+                &selected_index,
+            );
+        });
+    }
 
     // --- Signal: row activated (left-click) ---
     {
         let state = state.clone();
         let list_box_clone = list_box.clone();
+        let btn_edit_time = btn_edit_time.clone();
+        let btn_delete = btn_delete.clone();
+        let btn_mark = btn_mark.clone();
+        let btn_move5 = btn_move5.clone();
+        let selected_index = selected_index.clone();
         list_box.connect_row_activated(move |_, row| {
             let index = row.index() as usize;
             let mut s = state.borrow_mut();
@@ -91,6 +133,14 @@ pub fn build_window(app: &Application) {
             }
             drop(s);
             update_list_appearance(&list_box_clone, &state);
+            refresh_button_sensitivity(
+                &btn_edit_time,
+                &btn_delete,
+                &btn_mark,
+                &btn_move5,
+                &state,
+                &selected_index,
+            );
         });
     }
 
@@ -116,7 +166,7 @@ pub fn build_window(app: &Application) {
                 s.paused = true;
             }
             populate_list(&list_box_clone, &state);
-            state.borrow().save();
+            state.borrow().save_projects();
         });
     }
 
@@ -124,20 +174,114 @@ pub fn build_window(app: &Application) {
     {
         let state = state.clone();
         let list_box_clone = list_box.clone();
+        let btn_edit_time = btn_edit_time.clone();
+        let btn_delete = btn_delete.clone();
+        let btn_mark = btn_mark.clone();
+        let btn_move5 = btn_move5.clone();
+        let selected_index = selected_index.clone();
         btn_pause.connect_clicked(move |_| {
             state.borrow_mut().deselect();
             update_list_appearance(&list_box_clone, &state);
+            refresh_button_sensitivity(
+                &btn_edit_time,
+                &btn_delete,
+                &btn_mark,
+                &btn_move5,
+                &state,
+                &selected_index,
+            );
         });
     }
 
-    // --- Right-click context menu ---
-    setup_context_menu(&list_box, &state, &window);
+    // --- Signal: Edit Time button ---
+    {
+        let state = state.clone();
+        let list_box_clone = list_box.clone();
+        let window_clone = window.clone();
+        let selected_index = selected_index.clone();
+        btn_edit_time.connect_clicked(move |_| {
+            if let Some(idx) = *selected_index.borrow() {
+                show_edit_time_dialog(&window_clone, &state, &list_box_clone, idx);
+            }
+        });
+    }
+
+    // --- Signal: Delete button ---
+    {
+        let state = state.clone();
+        let list_box_clone = list_box.clone();
+        let btn_edit_time = btn_edit_time.clone();
+        let btn_delete_c = btn_delete.clone();
+        let btn_mark = btn_mark.clone();
+        let btn_move5 = btn_move5.clone();
+        let selected_index = selected_index.clone();
+        btn_delete.connect_clicked(move |_| {
+            if let Some(idx) = *selected_index.borrow() {
+                state.borrow_mut().delete_project(idx);
+                *selected_index.borrow_mut() = None;
+                populate_list(&list_box_clone, &state);
+                state.borrow().save_projects();
+                refresh_button_sensitivity(
+                    &btn_edit_time,
+                    &btn_delete_c,
+                    &btn_mark,
+                    &btn_move5,
+                    &state,
+                    &selected_index,
+                );
+            }
+        });
+    }
+
+    // --- Signal: Mark button ---
+    {
+        let state = state.clone();
+        let list_box_clone = list_box.clone();
+        let selected_index = selected_index.clone();
+        btn_mark.connect_clicked(move |_| {
+            if let Some(idx) = *selected_index.borrow() {
+                state.borrow_mut().mark_source(idx);
+                populate_list(&list_box_clone, &state);
+                state.borrow().save_times();
+            }
+        });
+    }
+
+    // --- Signal: Move 5 min button ---
+    {
+        let state = state.clone();
+        let list_box_clone = list_box.clone();
+        let btn_edit_time = btn_edit_time.clone();
+        let btn_delete = btn_delete.clone();
+        let btn_mark = btn_mark.clone();
+        let btn_move5_c = btn_move5.clone();
+        let selected_index = selected_index.clone();
+        btn_move5.connect_clicked(move |_| {
+            let active = state.borrow().active_index;
+            let selected = *selected_index.borrow();
+            if let (Some(from), Some(to)) = (active, selected) {
+                if from != to {
+                    state.borrow_mut().transfer_minutes(from, to, 5);
+                    state.borrow().save_times();
+                    populate_list(&list_box_clone, &state);
+                    refresh_button_sensitivity(
+                        &btn_edit_time,
+                        &btn_delete,
+                        &btn_mark,
+                        &btn_move5_c,
+                        &state,
+                        &selected_index,
+                    );
+                }
+            }
+        });
+    }
 
     // --- Auto-save timer (every 10 minutes) ---
     {
         let state = state.clone();
         glib::timeout_add_seconds_local(600, move || {
-            state.borrow().save();
+            state.borrow().save_times();
             glib::ControlFlow::Continue
         });
     }
@@ -199,7 +343,7 @@ pub fn build_window(app: &Application) {
         let state = state.clone();
         window.connect_close_request(move |win| {
             let s = state.borrow();
-            s.save();
+            s.save_times();
             let mut cfg = Config::load();
             cfg.window_width = win.width();
             cfg.window_height = win.height();
@@ -209,6 +353,11 @@ pub fn build_window(app: &Application) {
                 project_name: s.projects[i].name.clone(),
             });
             cfg.save();
+            // Explicitly quit the application so app.run() returns in main(),
+            // ensuring the LockGuard is dropped and LOCK file is removed.
+            if let Some(application) = win.application() {
+                application.quit();
+            }
             glib::Propagation::Proceed
         });
     }
@@ -249,24 +398,26 @@ fn update_list_appearance(list_box: &ListBox, state: &Rc<RefCell<AppState>>) {
     }
 }
 
-fn row_markup(
-    project: &crate::app::Project,
-    active: bool,
-    marked: bool,
-    font_size: i32,
-) -> String {
-    let time_str = data::format_hhmm(project.minutes);
+fn row_markup(project: &crate::app::Project, active: bool, marked: bool, font_size: i32) -> String {
+    // Show blank for 0-minute projects, time for others.
+    // <tt> (monospace) ensures 5 spaces == "HH:MM" width, keeping the name
+    // column aligned regardless of whether time is shown.
+    let time_display = if project.minutes > 0 {
+        data::format_hhmm(project.minutes)
+    } else {
+        "     ".to_string()
+    };
     let name = glib::markup_escape_text(&project.name);
     let mark_indicator = if marked { " ●" } else { "" };
     if active {
         format!(
-            "<span font_size=\"{}pt\" weight=\"bold\" foreground=\"#2080ff\">{} {}{}</span>",
-            font_size, time_str, name, mark_indicator
+            "<span font_size=\"{0}pt\" weight=\"bold\" foreground=\"#2080ff\"><tt>{1}</tt> {2}{3}</span>",
+            font_size, time_display, name, mark_indicator
         )
     } else {
         format!(
-            "<span font_size=\"{}pt\">{} {}{}</span>",
-            font_size, time_str, name, mark_indicator
+            "<span font_size=\"{0}pt\"><tt>{1}</tt> {2}{3}</span>",
+            font_size, time_display, name, mark_indicator
         )
     }
 }
@@ -289,150 +440,26 @@ fn make_row(
     row
 }
 
-fn setup_context_menu(
-    list_box: &ListBox,
+fn refresh_button_sensitivity(
+    btn_edit_time: &Button,
+    btn_delete: &Button,
+    btn_mark: &Button,
+    btn_move5: &Button,
     state: &Rc<RefCell<AppState>>,
-    window: &ApplicationWindow,
+    selected_index: &Rc<RefCell<Option<usize>>>,
 ) {
-    let gesture = gtk4::GestureClick::new();
-    gesture.set_button(3); // Right mouse button
+    let s = state.borrow();
+    let sel = *selected_index.borrow();
+    let has_selection = sel.is_some();
+    let move5_enabled = s.active_index.is_some() && sel.is_some() && sel != s.active_index;
 
-    let state = state.clone();
-    let list_box_clone = list_box.clone();
-    let window_clone = window.clone();
-
-    gesture.connect_pressed(move |gesture, _n_press, x, y| {
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        if let Some(row) = list_box_clone.row_at_y(y as i32) {
-            let index = row.index() as usize;
-            show_context_menu(&list_box_clone, &state, &window_clone, index, x, y);
-        }
-    });
-
-    list_box.add_controller(gesture);
+    btn_edit_time.set_sensitive(has_selection);
+    btn_delete.set_sensitive(has_selection);
+    btn_mark.set_sensitive(has_selection);
+    btn_move5.set_sensitive(move5_enabled);
 }
 
-fn show_context_menu(
-    list_box: &ListBox,
-    state: &Rc<RefCell<AppState>>,
-    window: &ApplicationWindow,
-    index: usize,
-    x: f64,
-    y: f64,
-) {
-    let menu_box = GtkBox::new(Orientation::Vertical, 2);
-    menu_box.set_margin_top(4);
-    menu_box.set_margin_bottom(4);
-    menu_box.set_margin_start(4);
-    menu_box.set_margin_end(4);
-
-    let popover = gtk4::Popover::new();
-    popover.set_child(Some(&menu_box));
-    popover.set_parent(list_box);
-    let rect = gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
-    popover.set_pointing_to(Some(&rect));
-
-    // "Mark as source" button
-    {
-        let btn = Button::with_label("Mark as source");
-        btn.add_css_class("flat");
-        let state_c = state.clone();
-        let lb = list_box.clone();
-        let popover_c = popover.clone();
-        btn.connect_clicked(move |_| {
-            popover_c.popdown();
-            state_c.borrow_mut().mark_source(index);
-            populate_list(&lb, &state_c);
-            state_c.borrow().save();
-        });
-        menu_box.append(&btn);
-    }
-
-    // Transfer buttons (only if a different project is marked)
-    let marked_idx = state.borrow().marked_index;
-    if let Some(from) = marked_idx {
-        if from != index {
-            let from_name = state
-                .borrow()
-                .projects
-                .get(from)
-                .map(|p| p.name.clone())
-                .unwrap_or_default();
-
-            // Transfer 5 minutes
-            {
-                let label = format!("Transfer 5 min from {}", from_name);
-                let btn = Button::with_label(&label);
-                btn.add_css_class("flat");
-                let state_c = state.clone();
-                let lb = list_box.clone();
-                let popover_c = popover.clone();
-                btn.connect_clicked(move |_| {
-                    popover_c.popdown();
-                    state_c.borrow_mut().transfer_minutes(from, index, 5);
-                    populate_list(&lb, &state_c);
-                    state_c.borrow().save();
-                });
-                menu_box.append(&btn);
-            }
-
-            // Transfer custom amount
-            {
-                let label = format!("Transfer custom from {}…", from_name);
-                let btn = Button::with_label(&label);
-                btn.add_css_class("flat");
-                let state_c = state.clone();
-                let lb = list_box.clone();
-                let window_c = window.clone();
-                let popover_c = popover.clone();
-                btn.connect_clicked(move |_| {
-                    popover_c.popdown();
-                    show_transfer_dialog(&window_c, &state_c, &lb, from, index);
-                });
-                menu_box.append(&btn);
-            }
-        }
-    }
-
-    // Edit time directly
-    {
-        let btn = Button::with_label("Edit time directly…");
-        btn.add_css_class("flat");
-        let state_c = state.clone();
-        let lb = list_box.clone();
-        let window_c = window.clone();
-        let popover_c = popover.clone();
-        btn.connect_clicked(move |_| {
-            popover_c.popdown();
-            show_edit_time_dialog(&window_c, &state_c, &lb, index);
-        });
-        menu_box.append(&btn);
-    }
-
-    // Delete project
-    {
-        let btn = Button::with_label("Delete project");
-        btn.add_css_class("flat");
-        let state_c = state.clone();
-        let lb = list_box.clone();
-        let popover_c = popover.clone();
-        btn.connect_clicked(move |_| {
-            popover_c.popdown();
-            state_c.borrow_mut().delete_project(index);
-            populate_list(&lb, &state_c);
-            state_c.borrow().save();
-        });
-        menu_box.append(&btn);
-    }
-
-    popover.popup();
-}
-
-fn show_add_dialog(
-    window: &ApplicationWindow,
-    state: &Rc<RefCell<AppState>>,
-    list_box: &ListBox,
-) {
+fn show_add_dialog(window: &ApplicationWindow, state: &Rc<RefCell<AppState>>, list_box: &ListBox) {
     let dialog = gtk4::Dialog::with_buttons(
         Some("Add Project"),
         Some(window),
@@ -459,7 +486,7 @@ fn show_add_dialog(
             if !name.is_empty() {
                 state_c.borrow_mut().add_project(name);
                 populate_list(&lb, &state_c);
-                state_c.borrow().save();
+                state_c.borrow().save_projects();
             }
         }
         dlg.close();
@@ -508,7 +535,7 @@ fn show_edit_time_dialog(
             let minutes = data::parse_hhmm(&text);
             state_c.borrow_mut().set_time(index, minutes);
             populate_list(&lb, &state_c);
-            state_c.borrow().save();
+            state_c.borrow().save_times();
         }
         dlg.close();
     });
@@ -547,7 +574,7 @@ fn show_transfer_dialog(
             let minutes = spin.value() as u32;
             state_c.borrow_mut().transfer_minutes(from, to, minutes);
             populate_list(&lb, &state_c);
-            state_c.borrow().save();
+            state_c.borrow().save_times();
         }
         dlg.close();
     });

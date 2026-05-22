@@ -136,6 +136,7 @@ HH:MM AnotherProject
 - Create `GApplication`, connect `activate` signal.
 - Register UNIX signal handlers (SIGTERM, SIGINT, SIGHUP, SIGQUIT) via `glib::unix_signal_add` — on receipt, save and quit.
 - Bootstrap `AppState`, call `ui::build_window`.
+- `--force` / `-f` flag: **before** calling `acquire_lock()`, attempt `fs::remove_file(lock_file_path())`. The removal error is silently ignored (lock may not exist). This unblocks a stale lock left by a crashed previous instance. *(Already parsed; the `fs::remove_file` call must be wired in.)*
 
 ### `app.rs`
 - `AppState::new()` — initialise state, load projectlist, load today's dayfile.
@@ -167,33 +168,70 @@ HH:MM AnotherProject
   ```
   ApplicationWindow
     Box (vertical)
-      Box (horizontal, toolbar)
-        Button: Quit
-        Button: +10
-        Button: -10
-        Button: Pause  (hidden in editor mode)
-        Button: Add
-        Button: Edit
-        Button: Save   (editor mode only)
-        Button: Load   (editor mode only)
-        Label: total time display  (e.g. " 3:45+0")
       ScrolledWindow
-        ListView (projects: time | name columns)
+        ListBox (projects: time | name columns)
+      Box (horizontal, button bar)
+        Button: Add
+        Button: Sort A-Å
+        Button: Pause
+        Button: Edit Time   ← acts on selected (highlighted) row
+        Button: Delete      ← acts on selected (highlighted) row
+        Button: Mark        ← toggles mark on selected row
+        Button: Move 5 min  ← moves 5 min from active project → selected project
   ```
-- Context menu (right-click on list row): Edit time, Delete project, Mark, Transfer.
-- `build_edit_dialog(parent, project, minutes) -> Dialog` — modal dialog with `Entry` for time and +/- buttons.
-- `build_add_dialog(parent) -> Dialog` — modal dialog with `Entry` for project name.
+- **No right-click context menu.** All row actions are performed via the button bar.
+- The header `Label` ("TimeTracker") inside the window body is **removed**; the title bar already shows "TimeTracker".
+- "Move 5 min" button: enabled only when `active_index` is `Some`, `selected_index` is `Some`, and they differ. Calls `AppState::transfer_minutes(active_index, selected_index, 5)`.
+- "Edit Time", "Delete", "Mark" buttons: enabled only when a row is selected in the `ListBox`.
+- `show_edit_time_dialog(parent, state, list_box, index)` — modal dialog with `Entry` for HH:MM.
+- `show_add_dialog(parent, state, list_box)` — modal dialog with `Entry` for project name.
 - Timer: `glib::timeout_add_seconds(60, tick_closure)` — fires every 60 s.
 - Auto-save timer: `glib::timeout_add_seconds(600, save_closure)` — fires every 10 min.
+
+#### Button-bar enable/disable rules (evaluated after every state change)
+| Button     | Enabled when                                                          |
+|------------|-----------------------------------------------------------------------|
+| Add        | Always                                                                |
+| Sort A-Å   | Always                                                                |
+| Pause      | `active_index.is_some()`                                              |
+| Edit Time  | A row is selected in the ListBox                                      |
+| Delete     | A row is selected in the ListBox                                      |
+| Mark       | A row is selected in the ListBox                                      |
+| Move 5 min | `active_index.is_some()` AND selected row ≠ active row               |
 
 ### `sort.rs`
 - `norwegian_sort_key(s: &str) -> String` — maps Æ→ZA, Ø→ZB, Å→ZC (and lowercase equivalents) so standard lexicographic sort places them after Z.
 - `sort_projects(projects: &mut Vec<Project>)` — sorts by `norwegian_sort_key(name)`.
 - Note: sort is applied only when explicitly requested (Add/Delete), not on every tick.
 
+## Planned Changes (next build cycle)
+
+### 1. Remove redundant app-name header (`ui.rs`)
+- Delete the `Label::new(Some("TimeTracker"))` / `header.set_markup(...)` / `vbox.append(&header)` block from `build_window`.
+- The window title bar already shows "TimeTracker"; the in-body label is redundant.
+
+### 2. Replace right-click context menu with a button bar (`ui.rs`)
+- Remove `setup_context_menu` and `show_context_menu` functions entirely.
+- Remove the `GestureClick` controller wired to button 3.
+- Add buttons to the existing `btn_box`: **Edit Time**, **Delete**, **Mark**, **Move 5 min**.
+- Track the currently highlighted (selected) row index separately from `active_index` using a `Rc<RefCell<Option<usize>>>` local to `build_window` (call it `selected_index`).
+- Connect `list_box.connect_row_selected` (not `connect_row_activated`) to update `selected_index` and refresh button sensitivity.
+- Button sensitivity must be refreshed in a shared helper called after every state mutation.
+
+### 3. Implement "Move 5 min" button (`ui.rs` + `app.rs`)
+- Button label: `"Move 5 min"`.
+- Enabled only when `active_index.is_some()` AND `selected_index.is_some()` AND `active_index ≠ selected_index`.
+- On click: call `AppState::transfer_minutes(active_index, selected_index, 5)`, then `save_times()`, then refresh list.
+- `AppState::transfer_minutes` already exists and handles the capped transfer; no changes needed in `app.rs`.
+
+### 4. Wire up `--force` / `-f` CLI flag (`main.rs`)
+- **Status:** The flag is already parsed (`force` bool). The `fs::remove_file(data::lock_file_path())` call is already present in `main.rs` at line 51 inside `if force { ... }`.
+- **Finding:** The flag IS already wired. The Builder must verify the existing code compiles and behaves correctly (remove stale lock before `acquire_lock()`). No code change required unless a bug is found.
+- Add a unit test in `data.rs` (or `main.rs` integration test) that: creates a LOCK file, calls `fs::remove_file(lock_file_path())`, then asserts `acquire_lock()` succeeds.
+
 ---
 
-## Signal & Timer Architecture
+
 
 | Event                        | Handler location | Action                                      |
 |------------------------------|------------------|---------------------------------------------|
@@ -202,10 +240,10 @@ HH:MM AnotherProject
 | +10 / -10 buttons            | `ui.rs`          | Call `AppState::increment`                  |
 | Pause button                 | `ui.rs`          | Set `active_index = None`                   |
 | Add button                   | `ui.rs`          | Show add dialog; on confirm call `add_project` |
-| Edit (context menu / button) | `ui.rs`          | Show edit dialog; on confirm call `edit_time` |
-| Delete (context menu)        | `ui.rs`          | Call `delete_project`                       |
-| Mark (context menu)          | `ui.rs`          | Set `marked_index`                          |
-| Transfer (context menu)      | `ui.rs`          | Call `AppState::transfer`                   |
+| Edit (button)                | `ui.rs`          | Show edit dialog on selected row; on confirm call `edit_time` |
+| Delete (button)              | `ui.rs`          | Call `delete_project` on selected row       |
+| Mark (button)                | `ui.rs`          | Call `mark_source` on selected row          |
+| Move 5 min (button)          | `ui.rs`          | Call `AppState::transfer_minutes(active, selected, 5)` |
 | 60 s timer                   | `app.rs`         | `AppState::tick()`, refresh UI              |
 | 600 s timer                  | `app.rs`         | `AppState::save("Periodic save")`           |
 | SIGTERM / SIGINT / SIGHUP    | `main.rs`        | Save, release lock, exit                    |

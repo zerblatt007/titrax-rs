@@ -6,9 +6,16 @@ A GTK4/Rust desktop time-tracker. The user maintains a list of projects; clickin
 
 ## Status
 
-- **Phase:** Architecture planned, implementation not started.
+- **Phase:** Implementation complete (v0.x). Four UI/UX changes planned for next build cycle (see `BLUEPRINT.md § Planned Changes`).
 - **Old C source** (`titrax.c`, `projectlist.c`, etc.) remains in repo root, untouched.
-- **Rust source** will live under `src/`.
+- **Rust source** lives under `src/`.
+
+## Pending Changes Summary
+
+1. Remove redundant "TimeTracker" label from window body (`ui.rs`).
+2. Replace right-click context menu with a persistent button bar (`ui.rs`).
+3. Add "Move 5 min" button: moves 5 min from active → selected project (`ui.rs`).
+4. Verify `--force` / `-f` flag correctly removes stale LOCK before `acquire_lock()` (`main.rs` — likely already wired, needs test).
 
 ## Runtime Dependencies
 
@@ -43,3 +50,4 @@ A GTK4/Rust desktop time-tracker. The user maintains a list of projects; clickin
 | `~/.TimeTracker/YYYY-MM-DD`   | Daily time log              |
 | `~/.TimeTracker/LOCK`         | Single-instance lock        |
 | `~/.TimeTracker/config.toml`  | User config                 |
+

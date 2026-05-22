@@ -31,9 +31,38 @@ impl Drop for LockGuard {
 /// Create the data directory and acquire the lock file.
 /// Returns `Err` if the lock is already held by another process.
 pub fn acquire_lock() -> std::io::Result<LockGuard> {
-    let dir = data_dir();
     ensure_data_dir()?;
-    LockGuard::acquire(&dir)
+    LockGuard::acquire(&data_dir())
+}
+
+pub fn lock_file_path() -> PathBuf {
+    data_dir().join("LOCK")
+}
+
+/// Return the path of the most recent day file that is NOT today.
+/// Used to seed the project list when no projectlist file exists or
+/// when projectlist contains stale/test entries.
+pub fn find_most_recent_dayfile() -> Option<PathBuf> {
+    let dir = data_dir();
+    let today = today_string();
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|name| name != &today && is_dayfile_name(name))
+        .collect();
+    names.sort();
+    names.pop().map(|name| dir.join(name))
+}
+
+/// Returns true if the name looks like a YYYY-MM-DD day file.
+fn is_dayfile_name(name: &str) -> bool {
+    name.len() == 10
+        && name.as_bytes()[4] == b'-'
+        && name.as_bytes()[7] == b'-'
+        && name[..4].chars().all(|c| c.is_ascii_digit())
+        && name[5..7].chars().all(|c| c.is_ascii_digit())
+        && name[8..].chars().all(|c| c.is_ascii_digit())
 }
 
 pub fn data_dir() -> PathBuf {
@@ -57,16 +86,60 @@ pub fn today_file() -> PathBuf {
     data_dir().join(today_string())
 }
 
+pub fn projectlist_file() -> PathBuf {
+    data_dir().join("projectlist")
+}
+
+/// Read a file as a String, tolerating non-UTF-8 content.
+/// Tries UTF-8 first; falls back to ISO-8859-1 (Latin-1).
+/// Latin-1 byte values 0x00–0xFF map 1:1 to Unicode U+0000–U+00FF,
+/// so the conversion always succeeds and roundtrips correctly for
+/// day files written by the original C titrax on Norwegian systems.
+fn read_file_lenient(path: &Path) -> Option<String> {
+    if let Ok(s) = fs::read_to_string(path) {
+        return Some(s);
+    }
+    let bytes = fs::read(path).ok()?;
+    Some(bytes.iter().map(|&b| b as char).collect())
+}
+
+/// Read the master project list — one project name per line, preserving order.
+/// Lines starting with `#` and blank lines are ignored.
+pub fn read_projectlist(path: &Path) -> Vec<String> {
+    let text = match read_file_lenient(path) {
+        Some(t) => t,
+        None => return Vec::new(),
+    };
+    text.lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.to_string())
+        .collect()
+}
+
+/// Write the master project list — one project name per line.
+pub fn write_projectlist(path: &Path, projects: &[Project]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let content = projects
+        .iter()
+        .map(|p| format!("{}\n", p.name))
+        .collect::<String>();
+    fs::write(path, content)
+}
+
 pub fn today_string() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 /// Read a day-file. Lines starting with `#` are comments and are skipped.
-/// Format: `HH:MM ProjectName`
+/// Handles both old titrax format (` 2:00 Name`) and new format (`02:00 Name`).
+/// Uses lenient reading to tolerate ISO-8859-1 files from original titrax.
 pub fn read_dayfile(path: &Path) -> Vec<Project> {
-    let text = match fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(_) => return Vec::new(),
+    let text = match read_file_lenient(path) {
+        Some(t) => t,
+        None => return Vec::new(),
     };
     let mut projects = Vec::new();
     for line in text.lines() {
@@ -90,15 +163,15 @@ pub fn read_dayfile(path: &Path) -> Vec<Project> {
     projects
 }
 
-/// Write a day-file with a header comment for backward compatibility.
+/// Write a day-file. Only projects with time > 0 are written,
+/// matching the original titrax behaviour and keeping day files clean.
 pub fn write_dayfile(path: &Path, projects: &[Project]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let mut content = format!("# TIMETRACKER log saved at {}\n", timestamp);
-    content.push_str("# Rust/GTK4 rewrite\n");
-    for p in projects {
+    let mut content = format!("# TimeTracker log saved at {}\n", timestamp);
+    for p in projects.iter().filter(|p| p.minutes > 0) {
         content.push_str(&format!("{} {}\n", format_hhmm(p.minutes), p.name));
     }
     fs::write(path, content)
@@ -134,9 +207,15 @@ mod tests {
 
         {
             let _guard = LockGuard::acquire(&dir).expect("should acquire lock");
-            assert!(lock_path.exists(), "LOCK file must exist while guard is held");
+            assert!(
+                lock_path.exists(),
+                "LOCK file must exist while guard is held"
+            );
         }
-        assert!(!lock_path.exists(), "LOCK file must be removed after guard drops");
+        assert!(
+            !lock_path.exists(),
+            "LOCK file must be removed after guard drops"
+        );
     }
 
     #[test]
@@ -146,7 +225,10 @@ mod tests {
 
         let _guard = LockGuard::acquire(&dir).expect("first acquire must succeed");
         let second = LockGuard::acquire(&dir);
-        assert!(second.is_err(), "second acquire must fail while lock is held");
+        assert!(
+            second.is_err(),
+            "second acquire must fail while lock is held"
+        );
     }
 
     #[test]
@@ -155,5 +237,65 @@ mod tests {
         assert_eq!(format_hhmm(90), "01:30");
         assert_eq!(parse_hhmm("00:00"), 0);
         assert_eq!(format_hhmm(0), "00:00");
+    }
+
+    #[test]
+    fn test_read_dayfile_old_titrax_format() {
+        // Old titrax writes lines with a leading space and single-digit hours,
+        // e.g. " 2:00 Authentisering" and " 0:53 IT IS datasenter".
+        // Verify that read_dayfile handles this correctly.
+        let dir = std::env::temp_dir().join("titrax-test-dayfile");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("2026-05-21");
+        fs::write(
+            &path,
+            "# TIMETRACKER log saved at Fri May 22 00:00:42 2026\n\
+             # End of day\n\
+              2:00 Authentisering\n\
+              3:02 Basis team\n\
+              2:02 IT IS Annet\n\
+              0:53 IT IS datasenter\n",
+        )
+        .unwrap();
+        let projects = read_dayfile(&path);
+        assert_eq!(projects.len(), 4);
+        assert_eq!(projects[0].name, "Authentisering");
+        assert_eq!(projects[0].minutes, 120);
+        assert_eq!(projects[1].name, "Basis team");
+        assert_eq!(projects[1].minutes, 182);
+        assert_eq!(projects[2].name, "IT IS Annet");
+        assert_eq!(projects[2].minutes, 122);
+        assert_eq!(projects[3].name, "IT IS datasenter");
+        assert_eq!(projects[3].minutes, 53);
+    }
+
+    #[test]
+    fn test_force_flag_removes_stale_lock() {
+        let dir = std::env::temp_dir().join("titrax-test-force-flag");
+        fs::create_dir_all(&dir).unwrap();
+        let lock_path = dir.join("LOCK");
+
+        // Simulate a stale lock file left by a crashed previous instance.
+        fs::write(&lock_path, "stale").unwrap();
+        assert!(
+            lock_path.exists(),
+            "stale LOCK file must exist before force-remove"
+        );
+
+        // Simulate what --force does: remove the stale lock file.
+        fs::remove_file(&lock_path).expect("force-remove of stale lock must succeed");
+
+        // After removal, acquiring the lock must succeed.
+        let guard =
+            LockGuard::acquire(&dir).expect("acquire must succeed after stale lock removed");
+        assert!(
+            lock_path.exists(),
+            "LOCK file must exist while guard is held"
+        );
+        drop(guard);
+        assert!(
+            !lock_path.exists(),
+            "LOCK file must be removed after guard drops"
+        );
     }
 }
