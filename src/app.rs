@@ -4,15 +4,16 @@ use crate::data;
 pub struct Project {
     pub name: String,
     pub minutes: u32,
-    pub marked: bool,
 }
 
 #[derive(Debug)]
 pub struct AppState {
     pub projects: Vec<Project>,
     pub active_index: Option<usize>,
-    pub marked_index: Option<usize>,
+    pub current_day: String,
     pub font_size: i32,
+    pub total_minutes: u32,
+    pub adjusted_minutes: i32,
     pub paused: bool,
     pub last_tick: std::time::Instant,
 }
@@ -22,22 +23,90 @@ impl AppState {
         Self {
             projects: Vec::new(),
             active_index: None,
-            marked_index: None,
+            current_day: data::today_string(),
             font_size,
+            total_minutes: 0,
+            adjusted_minutes: 0,
             paused: true,
             last_tick: std::time::Instant::now(),
         }
     }
 
     pub fn load_today(&mut self) {
-        let path = data::today_file();
-        self.projects = data::read_dayfile(&path);
+        self.current_day = data::today_string();
+
+        // 1. Read the master project list for ordered project names.
+        let pl_names = data::read_projectlist(&data::projectlist_file());
+
+        // 2. Read today's day file for time data.
+        let today_projects = data::read_dayfile(&data::today_file());
+
+        // 3. Read the most recent previous day file for project names that
+        //    may be missing from projectlist (e.g. when projectlist is stale
+        //    or was never written by the old titrax).
+        let recent_projects = data::find_most_recent_dayfile()
+            .map(|p| data::read_dayfile(&p))
+            .unwrap_or_default();
+
+        // 4. Build a merged, ordered name list:
+        //    projectlist order first, then any names from the most recent day
+        //    file, then any names from today's day file not yet seen.
+        let mut names: Vec<String> = pl_names;
+        for p in recent_projects.iter().chain(today_projects.iter()) {
+            if !names.iter().any(|n| n == &p.name) {
+                names.push(p.name.clone());
+            }
+        }
+
+        // 5. Build projects with today's times overlaid.
+        self.projects = names
+            .into_iter()
+            .map(|name| {
+                let minutes = today_projects
+                    .iter()
+                    .find(|p| p.name == name)
+                    .map(|p| p.minutes)
+                    .unwrap_or(0);
+                Project { name, minutes }
+            })
+            .collect();
+        self.total_minutes = self.projects.iter().map(|p| p.minutes).sum();
+        self.adjusted_minutes = 0;
     }
 
-    pub fn save(&self) {
-        let path = data::today_file();
+    /// When the wall date changes, flush previous day and start a fresh day
+    /// while keeping project names/order and active selection.
+    pub fn rollover_if_new_day(&mut self) {
+        let today = data::today_string();
+        if today == self.current_day {
+            return;
+        }
+
         let _ = data::ensure_data_dir();
-        let _ = data::write_dayfile(&path, &self.projects);
+        let _ = data::write_dayfile(&data::day_file_for(&self.current_day), &self.projects);
+
+        for project in &mut self.projects {
+            project.minutes = 0;
+        }
+        self.total_minutes = 0;
+        self.adjusted_minutes = 0;
+        self.current_day = today;
+    }
+
+    /// Save time data to today's day file only.
+    /// Called frequently: auto-save timer, on close, on time edits/transfers.
+    /// Does NOT touch projectlist.
+    pub fn save_times(&self) {
+        let _ = data::ensure_data_dir();
+        let _ = data::write_dayfile(&data::today_file(), &self.projects);
+    }
+
+    /// Save project structure (names, order) to projectlist, then save times.
+    /// Called only when project structure changes: add, delete, reorder, sort.
+    pub fn save_projects(&self) {
+        let _ = data::ensure_data_dir();
+        let _ = data::write_projectlist(&data::projectlist_file(), &self.projects);
+        let _ = data::write_dayfile(&data::today_file(), &self.projects);
     }
 
     /// Advance the active project's time counter by elapsed minutes.
@@ -55,7 +124,9 @@ impl AppState {
         if secs < 120 {
             if let Some(idx) = self.active_index {
                 if idx < self.projects.len() {
-                    self.projects[idx].minutes += (secs / 60) as u32;
+                    let inc = (secs / 60) as u32;
+                    self.projects[idx].minutes += inc;
+                    self.total_minutes += inc;
                 }
             }
         }
@@ -79,7 +150,6 @@ impl AppState {
             self.projects.push(Project {
                 name,
                 minutes: 0,
-                marked: false,
             });
         }
     }
@@ -90,38 +160,14 @@ impl AppState {
                 self.active_index = None;
                 self.paused = true;
             }
-            if self.marked_index == Some(index) {
-                self.marked_index = None;
-            }
-            self.projects.remove(index);
+            let removed = self.projects.remove(index);
+            self.total_minutes = self.total_minutes.saturating_sub(removed.minutes);
+            self.adjusted_minutes -= removed.minutes as i32;
             // Adjust indices after removal
             if let Some(ai) = self.active_index {
                 if ai > index {
                     self.active_index = Some(ai - 1);
                 }
-            }
-            if let Some(mi) = self.marked_index {
-                if mi > index {
-                    self.marked_index = Some(mi - 1);
-                }
-            }
-        }
-    }
-
-    /// Toggle the mark on a project. Only one project can be marked at a time.
-    pub fn mark_source(&mut self, index: usize) {
-        if index < self.projects.len() {
-            if self.marked_index == Some(index) {
-                self.projects[index].marked = false;
-                self.marked_index = None;
-            } else {
-                if let Some(mi) = self.marked_index {
-                    if mi < self.projects.len() {
-                        self.projects[mi].marked = false;
-                    }
-                }
-                self.projects[index].marked = true;
-                self.marked_index = Some(index);
             }
         }
     }
@@ -137,7 +183,35 @@ impl AppState {
 
     pub fn set_time(&mut self, index: usize, minutes: u32) {
         if index < self.projects.len() {
+            let old = self.projects[index].minutes;
             self.projects[index].minutes = minutes;
+            if minutes >= old {
+                let delta = minutes - old;
+                self.total_minutes += delta;
+                self.adjusted_minutes += delta as i32;
+            } else {
+                let delta = old - minutes;
+                self.total_minutes = self.total_minutes.saturating_sub(delta);
+                self.adjusted_minutes -= delta as i32;
+            }
+        }
+    }
+
+    pub fn increment_minutes(&mut self, index: usize, delta: i32) {
+        if index >= self.projects.len() {
+            return;
+        }
+        let old = self.projects[index].minutes as i32;
+        let new = (old + delta).max(0) as u32;
+        self.projects[index].minutes = new;
+        if new as i32 >= old {
+            let inc = (new as i32 - old) as u32;
+            self.total_minutes += inc;
+            self.adjusted_minutes += inc as i32;
+        } else {
+            let dec = (old - new as i32) as u32;
+            self.total_minutes = self.total_minutes.saturating_sub(dec);
+            self.adjusted_minutes -= dec as i32;
         }
     }
 
@@ -146,7 +220,6 @@ impl AppState {
             let project = self.projects.remove(from);
             self.projects.insert(to, project);
             self.active_index = adjust_index(self.active_index, from, to);
-            self.marked_index = adjust_index(self.marked_index, from, to);
         }
     }
 }
@@ -197,15 +270,5 @@ mod tests {
         state.transfer_minutes(0, 1, 999);
         assert_eq!(state.projects[0].minutes, 0);
         assert_eq!(state.projects[1].minutes, 10);
-    }
-
-    #[test]
-    fn test_mark_source_toggle() {
-        let mut state = AppState::new(12);
-        state.add_project("A".to_string());
-        state.mark_source(0);
-        assert_eq!(state.marked_index, Some(0));
-        state.mark_source(0);
-        assert_eq!(state.marked_index, None);
     }
 }

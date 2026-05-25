@@ -48,17 +48,46 @@ fn main() -> glib::ExitCode {
 
     // Remove stale LOCK file if --force was passed.
     if force {
-        let _ = std::fs::remove_file(data::lock_file_path());
+        if let Err(e) = data::remove_lock_file_if_exists() {
+            eprintln!("titrax: failed to remove LOCK file with --force: {}", e);
+            return glib::ExitCode::FAILURE;
+        }
     }
+
+    let gtk_args: Vec<String> = args
+        .into_iter()
+        .filter(|arg| arg != "--force" && arg != "-f")
+        .collect();
 
     // Acquire the lock file. Exit immediately if another instance holds it.
     let _lock = match data::acquire_lock() {
         Ok(guard) => guard,
+        Err(_) if force => {
+            // Retry once in force mode in case the stale lock appeared
+            // between initial removal and acquire.
+            if let Err(e) = data::remove_lock_file_if_exists() {
+                eprintln!("titrax: failed to remove LOCK file with --force: {}", e);
+                return glib::ExitCode::FAILURE;
+            }
+            match data::acquire_lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    eprintln!(
+                        "titrax: cannot acquire lock ({:?}): {}\n\
+                         titrax: another instance may already be running.",
+                        data::lock_file_path(),
+                        e
+                    );
+                    return glib::ExitCode::FAILURE;
+                }
+            }
+        }
         Err(e) => {
             eprintln!(
-                "titrax: cannot acquire lock (~/.TimeTracker/LOCK): {}\n\
+                "titrax: cannot acquire lock ({:?}): {}\n\
                  titrax: another instance may already be running.\n\
                  titrax: use --force to remove a stale lock.",
+                data::lock_file_path(),
                 e
             );
             return glib::ExitCode::FAILURE;
@@ -79,12 +108,12 @@ fn main() -> glib::ExitCode {
     }
 
     app.connect_activate(ui::build_window);
-    let exit_code = app.run();
+    let exit_code = app.run_with_args(&gtk_args);
 
     // Belt-and-suspenders: explicitly remove the LOCK file after the main loop
     // exits, in case the Drop on LockGuard did not run (e.g. if GTK internals
     // called a non-unwinding exit path).
-    let _ = std::fs::remove_file(data::lock_file_path());
+    let _ = data::remove_lock_file_if_exists();
 
     exit_code
 }

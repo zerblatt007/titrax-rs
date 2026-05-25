@@ -3,3 +3,21 @@
 *.swo
 .env
 build-deps/
+
+# Personal/local data not for GitHub
+testfiles/
+
+# Legacy upstream C source snapshots should not be republished here
+titrax-1.98.1.orig-c-code/
+**/titrax-1.98.1.orig-c-code/
+
+# Local AI workflow metadata
+.opencode/
+opencode.json
+
+# Local toolchain backup files
+.cargo/config.toml.old
+
+# Local package build artifacts
+dist/
+*.deb

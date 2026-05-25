@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=TimeTracker
+Comment=Track time on projects
+Exec=titrax
+Icon=titrax
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true

@@ -39,6 +39,15 @@ pub fn lock_file_path() -> PathBuf {
     data_dir().join("LOCK")
 }
 
+/// Remove LOCK file if present. Missing file is not treated as an error.
+pub fn remove_lock_file_if_exists() -> std::io::Result<()> {
+    match fs::remove_file(lock_file_path()) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Return the path of the most recent day file that is NOT today.
 /// Used to seed the project list when no projectlist file exists or
 /// when projectlist contains stale/test entries.
@@ -66,16 +75,39 @@ fn is_dayfile_name(name: &str) -> bool {
 }
 
 pub fn data_dir() -> PathBuf {
-    // Respect TIMETRACKDIR and TIMEXDIR env vars per BLUEPRINT spec
-    if let Ok(val) = std::env::var("TIMETRACKDIR") {
-        return PathBuf::from(val);
+    // Respect TIMETRACKDIR and TIMEXDIR env vars per BLUEPRINT spec.
+    // Also accept TITRAXDIR for compatibility with older documentation.
+    if let Some(path) = env_dir("TIMETRACKDIR") {
+        return path;
     }
-    if let Ok(val) = std::env::var("TIMEXDIR") {
-        return PathBuf::from(val);
+    if let Some(path) = env_dir("TIMEXDIR") {
+        return path;
+    }
+    if let Some(path) = env_dir("TITRAXDIR") {
+        return path;
     }
     let mut home = home_dir();
     home.push(".TimeTracker");
     home
+}
+
+fn env_dir(var: &str) -> Option<PathBuf> {
+    let raw = std::env::var(var).ok()?;
+    let val = raw.trim();
+    if val.is_empty() {
+        return None;
+    }
+    Some(expand_tilde(val))
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    PathBuf::from(path)
 }
 
 pub fn ensure_data_dir() -> std::io::Result<()> {
@@ -84,6 +116,10 @@ pub fn ensure_data_dir() -> std::io::Result<()> {
 
 pub fn today_file() -> PathBuf {
     data_dir().join(today_string())
+}
+
+pub fn day_file_for(date: &str) -> PathBuf {
+    data_dir().join(date)
 }
 
 pub fn projectlist_file() -> PathBuf {
@@ -157,7 +193,6 @@ pub fn read_dayfile(path: &Path) -> Vec<Project> {
         projects.push(Project {
             name,
             minutes,
-            marked: false,
         });
     }
     projects
@@ -179,13 +214,13 @@ pub fn write_dayfile(path: &Path, projects: &[Project]) -> std::io::Result<()> {
 
 pub fn parse_hhmm(s: &str) -> u32 {
     let mut parts = s.splitn(2, ':');
-    let h: u32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
-    let m: u32 = parts.next().unwrap_or("0").parse().unwrap_or(0);
+    let h: u32 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+    let m: u32 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
     h * 60 + m
 }
 
 pub fn format_hhmm(minutes: u32) -> String {
-    format!("{:02}:{:02}", minutes / 60, minutes % 60)
+    format!("{:2}:{:02}", minutes / 60, minutes % 60)
 }
 
 fn home_dir() -> PathBuf {
@@ -234,9 +269,11 @@ mod tests {
     #[test]
     fn test_parse_hhmm_roundtrip() {
         assert_eq!(parse_hhmm("01:30"), 90);
-        assert_eq!(format_hhmm(90), "01:30");
+        assert_eq!(parse_hhmm(" 1:30"), 90);
+        assert_eq!(format_hhmm(90), " 1:30");
         assert_eq!(parse_hhmm("00:00"), 0);
-        assert_eq!(format_hhmm(0), "00:00");
+        assert_eq!(parse_hhmm(" 0:00"), 0);
+        assert_eq!(format_hhmm(0), " 0:00");
     }
 
     #[test]
@@ -297,5 +334,29 @@ mod tests {
             !lock_path.exists(),
             "LOCK file must be removed after guard drops"
         );
+    }
+
+    #[test]
+    fn test_titraxdir_env_is_supported() {
+        let tmp = std::env::temp_dir().join("titrax-test-titraxdir-env");
+        std::env::set_var("TITRAXDIR", tmp.to_string_lossy().as_ref());
+        std::env::remove_var("TIMETRACKDIR");
+        std::env::remove_var("TIMEXDIR");
+
+        assert_eq!(data_dir(), tmp);
+
+        std::env::remove_var("TITRAXDIR");
+    }
+
+    #[test]
+    fn test_tilde_in_env_expands_to_home() {
+        std::env::set_var("TIMETRACKDIR", "~/.TimeTracker-test-tilde");
+        std::env::remove_var("TIMEXDIR");
+        std::env::remove_var("TITRAXDIR");
+
+        let expected = home_dir().join(".TimeTracker-test-tilde");
+        assert_eq!(data_dir(), expected);
+
+        std::env::remove_var("TIMETRACKDIR");
     }
 }
