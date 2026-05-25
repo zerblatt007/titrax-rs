@@ -1,0 +1,33 @@
+Titrax / TimeTracker License
+
+This repository is a modern rewrite of the original Titrax (TimeTracker)
+program by Harald Tveit Alvestrand.
+
+The original Titrax project documentation at
+https://www.alvestrand.no/titrax/
+states the following terms:
+
+COPYING, PAYMENT AND SUCH DETAILS
+
+I wrote this program because I needed it. After I released the first
+version, I got the feeling that other people may need it too.
+
+You may copy it and modify it in any way you like, the only thing that
+can make me mad is if you sell it for real money and do not give me some.
+
+As usual, there is no guarantee about anything at all, and you are not able
+to claim that I have done any damage to you by providing you with this
+program; any use you make of it is entirely at your own risk.
+
+If you like it, you are free to send me the price of a large pizza
+(my favourite costs around NOK 120 / USD 20 around Trondheim).
+Or not, if you don't feel like it.
+
+For this rewrite, the project preserves those original terms out of respect
+for the upstream work and attribution to Harald Tveit Alvestrand.
+
+Original author:
+Harald Tveit Alvestrand
+
+Original project reference:
+https://www.alvestrand.no/titrax/
