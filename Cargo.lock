@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "titrax"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "chrono",
  "gtk4",

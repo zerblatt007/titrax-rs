@@ -5,6 +5,8 @@ A minimal click-to-track time tracker for GNOME/GTK4, written in Rust.
 This is a modern rewrite of the original **Titrax** — a time-tracking program written by Harald Tveit Alvestrand in 1996 using the X11 Athena widget toolkit.
 Full credit and thanks to the original author.
 Original program and documentation: [https://www.alvestrand.no/titrax/](https://www.alvestrand.no/titrax/)
+License terms for this repository are documented in `LICENSE` and are based on
+the original Titrax distribution terms.
 
 ## Build
 

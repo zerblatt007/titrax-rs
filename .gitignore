@@ -16,6 +16,7 @@ titrax-1.98.1.orig-c-code/
 opencode.json
 
 # Local toolchain backup files
+.cargo/config.toml
 .cargo/config.toml.old
 
 # Local package build artifacts

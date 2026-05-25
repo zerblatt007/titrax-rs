@@ -51,3 +51,25 @@ A GTK4/Rust desktop time-tracker. The user maintains a list of projects; clickin
 | `~/.TimeTracker/LOCK`         | Single-instance lock        |
 | `~/.TimeTracker/config.toml`  | User config                 |
 
+## Session Handover (2026-05-25)
+
+1. Build toolchain override behavior
+	- A tracked `.cargo/config.toml` that hardcoded `/work/build-deps/...` caused local build failures.
+	- Direction is to keep local override opt-in via `.cargo/config.toml.example` and ignore live `.cargo/config.toml` in `.gitignore`.
+
+2. Packaging and release flow
+	- Build release binary first, then package: `cargo build --release` and `./scripts/build-user-deb.sh --release`.
+	- `.deb` output is under `dist/` and should be published as a GitHub Release asset, not committed to git history.
+
+3. Licensing policy
+	- Do not claim MIT/GPL/BSD without explicit relicensing permission from original author.
+	- Use custom upstream-based terms in `LICENSE`, referencing the original project page: https://www.alvestrand.no/titrax/.
+
+4. Runtime version visibility
+	- Window titlebar now includes Cargo version (for quick visual verification of running build).
+	- Implemented in `src/ui.rs` by setting title to `TimeTracker <version>`.
+
+5. Branch naming note
+	- Push issue was caused by branch mismatch (`master` vs `main`).
+	- Current workflow is on `main`.
+
