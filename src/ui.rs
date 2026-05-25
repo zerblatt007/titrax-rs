@@ -39,7 +39,7 @@ pub fn build_window(app: &Application) {
 
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("TimeTracker")
+        .title(format!("TimeTracker {}", env!("CARGO_PKG_VERSION")))
         .default_width(config.window_width)
         .default_height(config.window_height)
         .build();
