@@ -1,0 +1,8 @@
+[env]
+PKG_CONFIG = "build-deps/pkg-config-wrapper.sh"
+PKG_CONFIG_PATH = "build-deps/sysroot/usr/lib/x86_64-linux-gnu/pkgconfig:build-deps/sysroot/usr/share/pkgconfig"
+PKG_CONFIG_SYSROOT_DIR = "build-deps/sysroot"
+CC = "build-deps/gcc-wrapper.sh"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "build-deps/gcc-wrapper.sh"
