@@ -190,10 +190,7 @@ pub fn read_dayfile(path: &Path) -> Vec<Project> {
             continue;
         }
         let minutes = parse_hhmm(time_part);
-        projects.push(Project {
-            name,
-            minutes,
-        });
+        projects.push(Project { name, minutes });
     }
     projects
 }

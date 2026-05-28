@@ -51,7 +51,7 @@ apt-get install -y rustc cargo libgtk-4-dev pkg-config build-essential
 
 ```toml
 [package]
-name = "titrax"
+name = "titrax-rs"
 version = "0.1.0"
 edition = "2021"
 

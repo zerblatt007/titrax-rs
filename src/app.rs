@@ -16,6 +16,9 @@ pub struct AppState {
     pub adjusted_minutes: i32,
     pub paused: bool,
     pub last_tick: std::time::Instant,
+    /// Sub-minute seconds carried forward between ticks for the current project.
+    /// Reset to 0 whenever the active project changes.
+    tick_accumulator_secs: u64,
 }
 
 impl AppState {
@@ -29,6 +32,7 @@ impl AppState {
             adjusted_minutes: 0,
             paused: true,
             last_tick: std::time::Instant::now(),
+            tick_accumulator_secs: 0,
         }
     }
 
@@ -110,9 +114,19 @@ impl AppState {
     }
 
     /// Advance the active project's time counter by elapsed minutes.
-    /// Elapsed time greater than 2 minutes is discarded to avoid counting
-    /// system suspend time.
+    ///
+    /// Elapsed time is accumulated across calls so no sub-minute seconds are
+    /// silently discarded between ticks.  Gaps larger than 5 minutes are
+    /// treated as system suspend/hibernate and ignored entirely; the
+    /// accumulator is also cleared in that case so stale seconds do not bleed
+    /// into the next live interval.
     pub fn tick(&mut self) {
+        // Suspend threshold: gaps longer than this are assumed to be system
+        // suspend or hibernation rather than a delayed timer callback.
+        // 5 minutes gives comfortable headroom above the 60-second timer
+        // interval while still filtering genuine suspend events.
+        const SUSPEND_THRESHOLD_SECS: u64 = 300;
+
         if self.paused {
             self.last_tick = std::time::Instant::now();
             return;
@@ -120,13 +134,22 @@ impl AppState {
         let elapsed = self.last_tick.elapsed();
         self.last_tick = std::time::Instant::now();
         let secs = elapsed.as_secs();
-        // Guard: ignore gaps > 2 minutes (e.g. system suspend)
-        if secs < 120 {
+
+        if secs >= SUSPEND_THRESHOLD_SECS {
+            // System was suspended; discard and reset accumulator.
+            self.tick_accumulator_secs = 0;
+            return;
+        }
+
+        self.tick_accumulator_secs += secs;
+        let minutes = (self.tick_accumulator_secs / 60) as u32;
+        self.tick_accumulator_secs %= 60;
+
+        if minutes > 0 {
             if let Some(idx) = self.active_index {
                 if idx < self.projects.len() {
-                    let inc = (secs / 60) as u32;
-                    self.projects[idx].minutes += inc;
-                    self.total_minutes += inc;
+                    self.projects[idx].minutes += minutes;
+                    self.total_minutes += minutes;
                 }
             }
         }
@@ -134,6 +157,14 @@ impl AppState {
 
     pub fn select_project(&mut self, index: usize) {
         if index < self.projects.len() {
+            // Credit any elapsed time to the currently active project before
+            // switching.  Without this call, the partial minute since the last
+            // timer tick would be silently discarded on every project change.
+            self.tick();
+            // The accumulator belongs to the previous project; reset it so
+            // sub-minute seconds from the old project do not spill into the
+            // new one.
+            self.tick_accumulator_secs = 0;
             self.active_index = Some(index);
             self.paused = false;
             self.last_tick = std::time::Instant::now();
@@ -141,16 +172,16 @@ impl AppState {
     }
 
     pub fn deselect(&mut self) {
+        // Credit any elapsed time to the active project before pausing.
+        self.tick();
+        self.tick_accumulator_secs = 0;
         self.active_index = None;
         self.paused = true;
     }
 
     pub fn add_project(&mut self, name: String) {
         if !name.is_empty() && !self.projects.iter().any(|p| p.name == name) {
-            self.projects.push(Project {
-                name,
-                minutes: 0,
-            });
+            self.projects.push(Project { name, minutes: 0 });
         }
     }
 
@@ -270,5 +301,98 @@ mod tests {
         state.transfer_minutes(0, 1, 999);
         assert_eq!(state.projects[0].minutes, 0);
         assert_eq!(state.projects[1].minutes, 10);
+    }
+
+    /// Verify that the accumulator carries sub-minute seconds across ticks
+    /// so that no time is lost due to integer-division truncation.
+    #[test]
+    fn test_tick_accumulator_carries_sub_minute_seconds() {
+        let mut state = AppState::new(12);
+        state.add_project("A".to_string());
+        // Manually activate the project without going through select_project()
+        // so we control last_tick precisely.
+        state.active_index = Some(0);
+        state.paused = false;
+
+        // Simulate two ticks of 55 seconds each (110 s total = 1 full minute).
+        // Without the accumulator, both ticks would contribute 0 minutes
+        // (55 / 60 == 0) and the project would never advance.
+        // With the accumulator: after tick 1, accumulator = 55; after tick 2,
+        // accumulator = 110 → 1 minute credited, carry = 50.
+        state.last_tick = std::time::Instant::now() - std::time::Duration::from_secs(55);
+        state.tick();
+        assert_eq!(
+            state.projects[0].minutes, 0,
+            "first partial tick: no full minute yet"
+        );
+        assert_eq!(
+            state.tick_accumulator_secs, 55,
+            "accumulator must hold the 55 remainder"
+        );
+
+        state.last_tick = std::time::Instant::now() - std::time::Duration::from_secs(55);
+        state.tick();
+        assert_eq!(
+            state.projects[0].minutes, 1,
+            "combined 110 s must yield 1 minute"
+        );
+        assert_eq!(
+            state.tick_accumulator_secs, 50,
+            "10 s remainder must be carried forward"
+        );
+        assert_eq!(state.total_minutes, 1);
+    }
+
+    /// Verify that switching projects resets the accumulator so sub-minute
+    /// seconds from project A do not carry into project B.
+    #[test]
+    fn test_select_project_resets_accumulator() {
+        let mut state = AppState::new(12);
+        state.add_project("A".to_string());
+        state.add_project("B".to_string());
+
+        // Start A, let 45 s pass (not enough for a full minute).
+        state.active_index = Some(0);
+        state.paused = false;
+        state.last_tick = std::time::Instant::now() - std::time::Duration::from_secs(45);
+        state.tick();
+        assert_eq!(state.tick_accumulator_secs, 45);
+
+        // Switch to B: accumulator must be reset; A must not gain a minute.
+        state.select_project(1);
+        assert_eq!(state.active_index, Some(1));
+        assert_eq!(
+            state.tick_accumulator_secs, 0,
+            "accumulator must reset on project switch"
+        );
+        assert_eq!(
+            state.projects[0].minutes, 0,
+            "A must not gain a partial minute"
+        );
+    }
+
+    /// Verify that a gap longer than the suspend threshold (5 minutes) causes
+    /// the tick to be ignored and the accumulator to be cleared.
+    #[test]
+    fn test_tick_ignores_suspend_gap() {
+        let mut state = AppState::new(12);
+        state.add_project("A".to_string());
+        state.active_index = Some(0);
+        state.paused = false;
+        // Pre-load the accumulator with 50 seconds.
+        state.tick_accumulator_secs = 50;
+
+        // Simulate a 6-minute gap (clearly a suspend, exceeds the 300 s threshold).
+        state.last_tick = std::time::Instant::now() - std::time::Duration::from_secs(360);
+        state.tick();
+
+        assert_eq!(
+            state.projects[0].minutes, 0,
+            "suspended gap must not credit any minutes"
+        );
+        assert_eq!(
+            state.tick_accumulator_secs, 0,
+            "accumulator must be cleared after suspend"
+        );
     }
 }

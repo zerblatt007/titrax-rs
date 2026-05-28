@@ -1,8 +1,8 @@
 use gtk4::gdk;
 use gtk4::prelude::*;
 use gtk4::{
-    glib, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Label, ListBox,
-    ListBoxRow, Orientation, PolicyType, ScrolledWindow, SelectionMode,
+    glib, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Label, ListBox, ListBoxRow,
+    Orientation, PolicyType, ScrolledWindow, SelectionMode,
 };
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -43,7 +43,7 @@ pub fn build_window(app: &Application) {
         .default_width(config.window_width)
         .default_height(config.window_height)
         .build();
-    window.set_icon_name(Some("titrax"));
+    window.set_icon_name(Some("titrax-rs"));
 
     let root_box = GtkBox::new(Orientation::Horizontal, 8);
     root_box.set_margin_top(8);
@@ -497,9 +497,7 @@ pub fn build_window(app: &Application) {
             use gtk4::gdk::ModifierType;
             if mods.contains(ModifierType::CONTROL_MASK) {
                 match key {
-                    gtk4::gdk::Key::equal
-                    | gtk4::gdk::Key::plus
-                    | gtk4::gdk::Key::KP_Add => {
+                    gtk4::gdk::Key::equal | gtk4::gdk::Key::plus | gtk4::gdk::Key::KP_Add => {
                         let mut s = state.borrow_mut();
                         s.font_size = (s.font_size + 1).min(32);
                         save_font_size(s.font_size);
@@ -735,11 +733,7 @@ fn row_markup(project: &crate::app::Project, active: bool, font_size: i32) -> St
     }
 }
 
-fn make_row(
-    project: &crate::app::Project,
-    active: bool,
-    font_size: i32,
-) -> ListBoxRow {
+fn make_row(project: &crate::app::Project, active: bool, font_size: i32) -> ListBoxRow {
     let label = Label::new(None);
     label.set_markup(&row_markup(project, active, font_size));
     label.set_xalign(0.0);
@@ -833,7 +827,11 @@ fn refresh_button_sensitivity(
 }
 
 fn total_display_text(state: &AppState) -> String {
-    let sign = if state.adjusted_minutes >= 0 { '+' } else { '-' };
+    let sign = if state.adjusted_minutes >= 0 {
+        '+'
+    } else {
+        '-'
+    };
     let abs_delta = state.adjusted_minutes.abs();
     format!(
         "{}{}{:02}",
@@ -954,4 +952,3 @@ fn show_edit_time_dialog(
     });
     dialog.present();
 }
-
