@@ -12,9 +12,7 @@ pub fn norwegian_sort_key(s: &str) -> String {
 }
 
 pub fn sort_projects(projects: &mut Vec<crate::app::Project>) {
-    projects.sort_by(|a, b| {
-        norwegian_sort_key(&a.name).cmp(&norwegian_sort_key(&b.name))
-    });
+    projects.sort_by(|a, b| norwegian_sort_key(&a.name).cmp(&norwegian_sort_key(&b.name)));
 }
 
 #[cfg(test)]

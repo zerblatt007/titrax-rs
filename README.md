@@ -12,19 +12,19 @@ the original Titrax distribution terms.
 
 ```bash
 cargo build --release
-./target/release/titrax
+./target/release/titrax-rs
 ```
 
 If you start it from a terminal and want the prompt back immediately, use:
 
 ```bash
-./target/release/titrax &
+./target/release/titrax-rs &
 ```
 
 If you start it from an application icon or desktop launcher, no `&` is needed.
 
-The repo also includes a legacy-style app icon in `share/icons/hicolor/64x64/apps/titrax.png`
-and a desktop entry in `share/applications/titrax.desktop` so the launcher can show the
+The repo also includes a legacy-style app icon in `share/icons/hicolor/64x64/apps/titrax-rs.png`
+and a desktop entry in `share/applications/titrax-rs.desktop` so the launcher can show the
 old Titrax icon on modern desktops.
 
 For a per-user install without touching system directories, run:
@@ -34,7 +34,7 @@ For a per-user install without touching system directories, run:
 ```
 
 This installs the binary to `~/.local/bin`, the icon to `~/.local/share/icons/`, and a
-desktop entry to `~/.local/share/applications/`. It prefers `target/debug/titrax` when
+desktop entry to `~/.local/share/applications/`. It prefers `target/debug/titrax-rs` when
 present, so it follows your current development build; otherwise it falls back to release
 or builds debug on demand.
 
@@ -45,7 +45,7 @@ cargo build --release
 ./scripts/build-user-deb.sh --release
 ```
 
-The resulting package is written to `dist/titrax-user_<version>_<arch>.deb`.
+The resulting package is written to `dist/titrax-rs-user_<version>_<arch>.deb`.
 This is the file suitable for distribution and download.
 
 To build and install it directly for the current user (`~/.local`) in one step:
@@ -62,7 +62,7 @@ Pre-built `.deb` packages are published on the
 Download the `.deb` for your architecture and extract it into `~/.local`:
 
 ```bash
-dpkg-deb -x titrax-user_<version>_amd64.deb ~/.local
+dpkg-deb -x titrax-rs-user_<version>_amd64.deb ~/.local
 ```
 
 Or use the uninstall script to remove it later:
@@ -99,7 +99,7 @@ In addition to the above, you need:
 ## Data
 
 - Day files: `~/.TimeTracker/YYYY-MM-DD` — one file per day, format: `HH:MM ProjectName`
-- Config: `~/.config/titrax/config.toml`
+- Config: `~/.config/titrax-rs/config.toml`
 - Respects `TIMETRACKDIR` and `TIMEXDIR` environment variables for data directory override.
 
 ## Usage
@@ -116,6 +116,6 @@ In addition to the above, you need:
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `scripts/bump-version.sh` | Bump Cargo.toml version | `./scripts/bump-version.sh [patch\|minor\|major]` |
-| `scripts/install-user.sh` | Install Titrax for the current user | `./scripts/install-user.sh [path-to-binary]` |
+| `scripts/install-user.sh` | Install titrax-rs for the current user | `./scripts/install-user.sh [path-to-binary]` |
 | `scripts/build-user-deb.sh` | Build user-mode .deb (optional local install) | `./scripts/build-user-deb.sh [--install] [path-to-binary]` |
 | `scripts/uninstall-user.sh` | Remove user-mode install from ~/.local | `./scripts/uninstall-user.sh [--dry-run]` |

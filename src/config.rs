@@ -34,7 +34,7 @@ impl Default for Config {
 impl Config {
     pub fn config_path() -> PathBuf {
         let mut p = config_base_dir();
-        p.push("titrax");
+        p.push("titrax-rs");
         p.push("config.toml");
         p
     }

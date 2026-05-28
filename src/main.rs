@@ -9,15 +9,15 @@ mod ui;
 use gtk4::prelude::*;
 use gtk4::{glib, Application};
 
-const APP_ID: &str = "no.uninett.titrax";
+const APP_ID: &str = "io.github.zerblatt007.titrax-rs";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
     println!(
-        "titrax {} — TimeTracker\n\
+        "titrax-rs {} — TimeTracker\n\
          \n\
          USAGE:\n\
-         \ttitrax [OPTIONS]\n\
+         \ttitrax-rs [OPTIONS]\n\
          \n\
          OPTIONS:\n\
          \t--help,    -h   Print this help message and exit\n\
@@ -26,7 +26,7 @@ fn print_help() {
          \n\
          DATA:\n\
          \tDay files and project list are stored in ~/.TimeTracker/\n\
-         \tConfiguration is stored in ~/.config/titrax/config.toml\n",
+         \tConfiguration is stored in ~/.config/titrax-rs/config.toml\n",
         VERSION
     );
 }
@@ -42,14 +42,14 @@ fn main() -> glib::ExitCode {
         return glib::ExitCode::SUCCESS;
     }
     if args.iter().any(|a| a == "--version" || a == "-v") {
-        println!("titrax {}", VERSION);
+        println!("titrax-rs {}", VERSION);
         return glib::ExitCode::SUCCESS;
     }
 
     // Remove stale LOCK file if --force was passed.
     if force {
         if let Err(e) = data::remove_lock_file_if_exists() {
-            eprintln!("titrax: failed to remove LOCK file with --force: {}", e);
+            eprintln!("titrax-rs: failed to remove LOCK file with --force: {}", e);
             return glib::ExitCode::FAILURE;
         }
     }
@@ -66,15 +66,15 @@ fn main() -> glib::ExitCode {
             // Retry once in force mode in case the stale lock appeared
             // between initial removal and acquire.
             if let Err(e) = data::remove_lock_file_if_exists() {
-                eprintln!("titrax: failed to remove LOCK file with --force: {}", e);
+                eprintln!("titrax-rs: failed to remove LOCK file with --force: {}", e);
                 return glib::ExitCode::FAILURE;
             }
             match data::acquire_lock() {
                 Ok(guard) => guard,
                 Err(e) => {
                     eprintln!(
-                        "titrax: cannot acquire lock ({:?}): {}\n\
-                         titrax: another instance may already be running.",
+                        "titrax-rs: cannot acquire lock ({:?}): {}\n\
+                         titrax-rs: another instance may already be running.",
                         data::lock_file_path(),
                         e
                     );
@@ -84,9 +84,9 @@ fn main() -> glib::ExitCode {
         }
         Err(e) => {
             eprintln!(
-                "titrax: cannot acquire lock ({:?}): {}\n\
-                 titrax: another instance may already be running.\n\
-                 titrax: use --force to remove a stale lock.",
+                "titrax-rs: cannot acquire lock ({:?}): {}\n\
+                 titrax-rs: another instance may already be running.\n\
+                 titrax-rs: use --force to remove a stale lock.",
                 data::lock_file_path(),
                 e
             );
@@ -119,6 +119,12 @@ fn main() -> glib::ExitCode {
 }
 
 // Numeric signal constants — avoids pulling in the `libc` crate.
-const fn libc_sigterm() -> i32 { 15 }
-const fn libc_sigint()  -> i32 {  2 }
-const fn libc_sighup()  -> i32 {  1 }
+const fn libc_sigterm() -> i32 {
+    15
+}
+const fn libc_sigint() -> i32 {
+    2
+}
+const fn libc_sighup() -> i32 {
+    1
+}

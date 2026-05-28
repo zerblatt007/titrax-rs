@@ -1,4 +1,4 @@
-# Project Rules — Titrax GTK4/Rust
+# Project Rules — Titrax-RS GTK4/Rust
 
 1. **State sharing:** All mutable app state lives in `AppState` wrapped as `Rc<RefCell<AppState>>`. Never introduce `Arc`, `Mutex`, or threads; GTK4 callbacks are single-threaded.
 
