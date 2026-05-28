@@ -204,34 +204,6 @@ HH:MM AnotherProject
 - `sort_projects(projects: &mut Vec<Project>)` — sorts by `norwegian_sort_key(name)`.
 - Note: sort is applied only when explicitly requested (Add/Delete), not on every tick.
 
-## Planned Changes (next build cycle)
-
-### 1. Remove redundant app-name header (`ui.rs`)
-- Delete the `Label::new(Some("TimeTracker"))` / `header.set_markup(...)` / `vbox.append(&header)` block from `build_window`.
-- The window title bar already shows "TimeTracker"; the in-body label is redundant.
-
-### 2. Replace right-click context menu with a button bar (`ui.rs`)
-- Remove `setup_context_menu` and `show_context_menu` functions entirely.
-- Remove the `GestureClick` controller wired to button 3.
-- Add buttons to the existing `btn_box`: **Edit Time**, **Delete**, **Mark**, **Move 5 min**.
-- Track the currently highlighted (selected) row index separately from `active_index` using a `Rc<RefCell<Option<usize>>>` local to `build_window` (call it `selected_index`).
-- Connect `list_box.connect_row_selected` (not `connect_row_activated`) to update `selected_index` and refresh button sensitivity.
-- Button sensitivity must be refreshed in a shared helper called after every state mutation.
-
-### 3. Implement "Move 5 min" button (`ui.rs` + `app.rs`)
-- Button label: `"Move 5 min"`.
-- Enabled only when `active_index.is_some()` AND `selected_index.is_some()` AND `active_index ≠ selected_index`.
-- On click: call `AppState::transfer_minutes(active_index, selected_index, 5)`, then `save_times()`, then refresh list.
-- `AppState::transfer_minutes` already exists and handles the capped transfer; no changes needed in `app.rs`.
-
-### 4. Wire up `--force` / `-f` CLI flag (`main.rs`)
-- **Status:** The flag is already parsed (`force` bool). The `fs::remove_file(data::lock_file_path())` call is already present in `main.rs` at line 51 inside `if force { ... }`.
-- **Finding:** The flag IS already wired. The Builder must verify the existing code compiles and behaves correctly (remove stale lock before `acquire_lock()`). No code change required unless a bug is found.
-- Add a unit test in `data.rs` (or `main.rs` integration test) that: creates a LOCK file, calls `fs::remove_file(lock_file_path())`, then asserts `acquire_lock()` succeeds.
-
----
-
-
 
 | Event                        | Handler location | Action                                      |
 |------------------------------|------------------|---------------------------------------------|
