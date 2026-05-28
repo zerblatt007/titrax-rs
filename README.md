@@ -55,30 +55,32 @@ cargo build --release
 ./scripts/build-user-deb.sh --release --install
 ```
 
-### Downloading a pre-built `.deb`
+### Install from a pre-built `.deb` (quickest)
 
-Pre-built `.deb` packages are published on the
-[GitHub Releases page](https://github.com/search?q=titrax&type=repositories).
-Download the `.deb` for your architecture and extract it into `~/.local`:
+Pre-built packages are published on the
+[Releases page](https://github.com/zerblatt007/titrax-rs/releases).
+This one-liner downloads the latest release and installs it into `~/.local` — no root needed:
 
 ```bash
-dpkg-deb -x titrax-rs-user_<version>_amd64.deb ~/.local
+curl -sL $(curl -s https://api.github.com/repos/zerblatt007/titrax-rs/releases/latest \
+  | grep -o 'https://[^"]*amd64\.deb') -o /tmp/titrax-rs.deb \
+  && dpkg-deb -x /tmp/titrax-rs.deb ~/.local
 ```
 
-Or use the uninstall script to remove it later:
+After installation, make sure `~/.local/bin` is on your `PATH`. Then run:
+
+```bash
+titrax-rs &
+```
+
+To uninstall, run the uninstall script from a cloned copy of the repo:
 
 ```bash
 ./scripts/uninstall-user.sh
 ```
 
-To uninstall a user-mode install from `~/.local`:
-
-```bash
-./scripts/uninstall-user.sh
-```
-
-Note: `dpkg remove` does not apply to `--install` mode above, since that mode extracts
-the package into your home directory and does not register it in the system dpkg database.
+Note: `dpkg remove` does not apply here — the package is extracted directly into your home
+directory and is not registered in the system dpkg database.
 
 ## Requirements
 
