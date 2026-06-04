@@ -15,7 +15,6 @@ A GTK4/Rust desktop time-tracker. The user maintains a list of projects; clickin
 1. Remove redundant "TimeTracker" label from window body (`ui.rs`).
 2. Replace right-click context menu with a persistent button bar (`ui.rs`).
 3. Add "Move 5 min" button: moves 5 min from active → selected project (`ui.rs`).
-4. Verify `--force` / `-f` flag correctly removes stale LOCK before `acquire_lock()` (`main.rs` — likely already wired, needs test).
 
 ## Runtime Dependencies
 

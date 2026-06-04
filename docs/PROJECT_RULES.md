@@ -6,6 +6,6 @@
 
 3. **Data-file backward compatibility:** Day-file format (`# comment`, `HH:MM name`) and projectlist format (one name per line) must remain byte-for-byte compatible with the original C program's output.
 
-4. **Lock-file RAII:** The lock file (`~/.TimeTracker/LOCK`) must be managed via a `LockGuard` struct that removes the file on `Drop`. Never leave the lock file behind on any exit path.
+4. **PID lock-file RAII:** The lock file (`~/.TimeTracker/LOCK`) must be managed via a `LockGuard` struct that writes the process PID on acquire and removes the file on `Drop`. On acquire, if the lock file already exists, the stored PID is checked for liveness — a dead (stale) lock is automatically removed. Never leave the lock file behind on any exit path.
 
 5. **No unsafe code:** `#![forbid(unsafe_code)]` must appear at the top of `main.rs`. All GTK4 and system interactions must go through safe Rust crate APIs only.

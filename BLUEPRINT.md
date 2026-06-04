@@ -122,9 +122,11 @@ HH:MM AnotherProject
 ## Lock File (`~/.TimeTracker/LOCK`)
 
 - Created on startup (normal mode only, not date-edit mode).
-- Contains: `<hostname> <pid>\n`
+- Contains: `<pid>\n` (the process ID of the running instance).
 - Removed on clean exit.
-- If present at startup: show error dialog and exit.
+- If present at startup: reads the stored PID and checks whether that process is alive.
+  - If the process is still running, shows an error and exits (another instance is active).
+  - If the process is dead, removes the stale lock and proceeds automatically — no `--force` flag needed.
 
 ---
 
@@ -134,9 +136,8 @@ HH:MM AnotherProject
 - Parse CLI args: optional positional arg = date string (editor mode).
 - Resolve `data_dir` from env `TIMETRACKDIR` → `TIMEXDIR` → config → default `~/.TimeTracker`.
 - Create `GApplication`, connect `activate` signal.
-- Register UNIX signal handlers (SIGTERM, SIGINT, SIGHUP, SIGQUIT) via `glib::unix_signal_add` — on receipt, save and quit.
+- Register UNIX signal handlers (SIGTERM, SIGINT, SIGHUP) via `glib::unix_signal_add` — on receipt, save and quit.
 - Bootstrap `AppState`, call `ui::build_window`.
-- `--force` / `-f` flag: **before** calling `acquire_lock()`, attempt `fs::remove_file(lock_file_path())`. The removal error is silently ignored (lock may not exist). This unblocks a stale lock left by a crashed previous instance. *(Already parsed; the `fs::remove_file` call must be wired in.)*
 
 ### `app.rs`
 - `AppState::new()` — initialise state, load projectlist, load today's dayfile.
@@ -155,7 +156,7 @@ HH:MM AnotherProject
 - `write_projectlist(dir, names)` — overwrite projectlist file.
 - `read_dayfile(path) -> Vec<(String, u32)>` — parse `HH:MM name` lines.
 - `write_dayfile(path, projects, reason)` — write dayfile with header.
-- `acquire_lock(dir) -> Result<LockGuard>` — create LOCK file; `LockGuard` removes it on drop.
+- `acquire_lock(dir) -> Result<LockGuard>` — create LOCK file with PID; checks for stale locks by verifying the stored PID is alive. `LockGuard` removes it on drop.
 - `ensure_data_dir(dir)` — create directory if absent (mode 0700).
 
 ### `config.rs`

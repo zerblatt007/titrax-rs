@@ -1,23 +1,60 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::app::Project;
 
-/// RAII lock guard — removes the lock file on drop.
+/// RAII lock guard — removes the PID lock file on drop.
 /// Satisfies PROJECT_RULES.md rule 4: lock file must never be left behind.
 pub struct LockGuard {
     path: PathBuf,
 }
 
+/// Check whether a process with the given PID is alive.
+/// Uses the POSIX `kill(pid, 0)` trick: sending signal 0 checks existence
+/// without actually delivering a signal. Runs `kill -0 <pid>` as a subprocess
+/// to avoid unsafe code (PROJECT_RULES.md rule 5).
+fn is_process_alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
 impl LockGuard {
-    /// Attempt to acquire the lock file exclusively.
-    /// Returns `Err` if the lock file already exists (another instance running).
+    /// Attempt to acquire the PID lock file exclusively.
+    ///
+    /// If a lock file already exists, reads the stored PID and checks whether
+    /// that process is still alive.  A dead (stale) lock is automatically
+    /// removed so this instance can proceed — no `--force` flag needed.
+    ///
+    /// Returns `Err` only when another *live* process holds the lock.
     pub fn acquire(data_dir: &Path) -> std::io::Result<Self> {
         let path = data_dir.join("LOCK");
-        fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)?;
+        let my_pid = std::process::id();
+
+        if path.exists() {
+            let contents = fs::read_to_string(&path)?;
+            let stored_pid: u32 = contents
+                .trim()
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            if stored_pid > 0 && is_process_alive(stored_pid) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "another instance is already running",
+                ));
+            }
+            // Stale lock — dead process. Remove it and fall through.
+            let _ = fs::remove_file(&path);
+        }
+
+        let mut file = fs::File::create(&path)?;
+        writeln!(file, "{}", my_pid)?;
         Ok(Self { path })
     }
 }
@@ -28,8 +65,8 @@ impl Drop for LockGuard {
     }
 }
 
-/// Create the data directory and acquire the lock file.
-/// Returns `Err` if the lock is already held by another process.
+/// Create the data directory and acquire the PID lock file.
+/// Returns `Err` if the lock is already held by another live process.
 pub fn acquire_lock() -> std::io::Result<LockGuard> {
     ensure_data_dir()?;
     LockGuard::acquire(&data_dir())
@@ -243,6 +280,9 @@ mod tests {
                 lock_path.exists(),
                 "LOCK file must exist while guard is held"
             );
+            let contents = fs::read_to_string(&lock_path).unwrap();
+            let pid: u32 = contents.trim().split_whitespace().next().unwrap().parse().unwrap();
+            assert_eq!(pid, std::process::id());
         }
         assert!(
             !lock_path.exists(),
@@ -260,6 +300,37 @@ mod tests {
         assert!(
             second.is_err(),
             "second acquire must fail while lock is held"
+        );
+    }
+
+    #[test]
+    fn test_stale_lock_from_dead_process_is_replaced() {
+        let dir = std::env::temp_dir().join("titrax-test-stale-lock");
+        fs::create_dir_all(&dir).unwrap();
+        let lock_path = dir.join("LOCK");
+
+        // Simulate a stale lock file left by a crashed previous instance.
+        // Use PID 1 (init) which is always alive in containers — this should block.
+        fs::write(&lock_path, "1\n").unwrap();
+        let result = LockGuard::acquire(&dir);
+        assert!(
+            result.is_err(),
+            "acquire must fail when a live process holds the lock"
+        );
+
+        // Now write a PID that is definitely not alive (use a high number
+        // within the valid PID range that no process will ever use).
+        fs::write(&lock_path, "99999\n").unwrap();
+        let guard =
+            LockGuard::acquire(&dir).expect("acquire must succeed when stored PID is dead");
+        assert!(
+            lock_path.exists(),
+            "LOCK file must exist while guard is held"
+        );
+        drop(guard);
+        assert!(
+            !lock_path.exists(),
+            "LOCK file must be removed after guard drops"
         );
     }
 
@@ -301,36 +372,6 @@ mod tests {
         assert_eq!(projects[2].minutes, 122);
         assert_eq!(projects[3].name, "IT IS datasenter");
         assert_eq!(projects[3].minutes, 53);
-    }
-
-    #[test]
-    fn test_force_flag_removes_stale_lock() {
-        let dir = std::env::temp_dir().join("titrax-test-force-flag");
-        fs::create_dir_all(&dir).unwrap();
-        let lock_path = dir.join("LOCK");
-
-        // Simulate a stale lock file left by a crashed previous instance.
-        fs::write(&lock_path, "stale").unwrap();
-        assert!(
-            lock_path.exists(),
-            "stale LOCK file must exist before force-remove"
-        );
-
-        // Simulate what --force does: remove the stale lock file.
-        fs::remove_file(&lock_path).expect("force-remove of stale lock must succeed");
-
-        // After removal, acquiring the lock must succeed.
-        let guard =
-            LockGuard::acquire(&dir).expect("acquire must succeed after stale lock removed");
-        assert!(
-            lock_path.exists(),
-            "LOCK file must exist while guard is held"
-        );
-        drop(guard);
-        assert!(
-            !lock_path.exists(),
-            "LOCK file must be removed after guard drops"
-        );
     }
 
     #[test]

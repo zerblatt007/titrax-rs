@@ -22,7 +22,6 @@ fn print_help() {
          OPTIONS:\n\
          \t--help,    -h   Print this help message and exit\n\
          \t--version, -v   Print version and exit\n\
-         \t--force,   -f   Remove stale LOCK file before starting\n\
          \n\
          DATA:\n\
          \tDay files and project list are stored in ~/.TimeTracker/\n\
@@ -35,7 +34,6 @@ fn main() -> glib::ExitCode {
     // Parse arguments before acquiring the lock or initializing GTK.
     // This prevents --help and --version from creating a LOCK file.
     let args: Vec<String> = std::env::args().collect();
-    let force = args.iter().any(|a| a == "--force" || a == "-f");
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
         print_help();
@@ -46,47 +44,17 @@ fn main() -> glib::ExitCode {
         return glib::ExitCode::SUCCESS;
     }
 
-    // Remove stale LOCK file if --force was passed.
-    if force {
-        if let Err(e) = data::remove_lock_file_if_exists() {
-            eprintln!("titrax-rs: failed to remove LOCK file with --force: {}", e);
-            return glib::ExitCode::FAILURE;
-        }
-    }
+    let gtk_args: Vec<String> = args.clone();
 
-    let gtk_args: Vec<String> = args
-        .into_iter()
-        .filter(|arg| arg != "--force" && arg != "-f")
-        .collect();
-
-    // Acquire the lock file. Exit immediately if another instance holds it.
+    // Acquire the PID lock file. Exit immediately if another instance holds it.
+    // Stale locks (from crashed processes) are detected and removed automatically
+    // by checking whether the stored PID is still alive.
     let _lock = match data::acquire_lock() {
         Ok(guard) => guard,
-        Err(_) if force => {
-            // Retry once in force mode in case the stale lock appeared
-            // between initial removal and acquire.
-            if let Err(e) = data::remove_lock_file_if_exists() {
-                eprintln!("titrax-rs: failed to remove LOCK file with --force: {}", e);
-                return glib::ExitCode::FAILURE;
-            }
-            match data::acquire_lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    eprintln!(
-                        "titrax-rs: cannot acquire lock ({:?}): {}\n\
-                         titrax-rs: another instance may already be running.",
-                        data::lock_file_path(),
-                        e
-                    );
-                    return glib::ExitCode::FAILURE;
-                }
-            }
-        }
         Err(e) => {
             eprintln!(
                 "titrax-rs: cannot acquire lock ({:?}): {}\n\
-                 titrax-rs: another instance may already be running.\n\
-                 titrax-rs: use --force to remove a stale lock.",
+                 titrax-rs: another instance may already be running.",
                 data::lock_file_path(),
                 e
             );
