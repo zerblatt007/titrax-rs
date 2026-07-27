@@ -10,6 +10,12 @@ the original Titrax distribution terms.
 
 ## Build
 
+If no rust from before:
+```bash
+rustup toolchain list
+rustup install stable
+```
+
 ```bash
 cargo build --release
 ./target/release/titrax-rs
